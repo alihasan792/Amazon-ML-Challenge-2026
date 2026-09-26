@@ -1,0 +1,28 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Large generated data & validation files (>10MB)
+val_data/
+val_test_dir/
+*.tsv
+*.csv
+business_entity_resolution/val_data/
+business_entity_resolution/val_test_dir/
+business_entity_resolution/output/*.tsv
+!business_entity_resolution/output/.gitkeep
+
+# System & IDE files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
