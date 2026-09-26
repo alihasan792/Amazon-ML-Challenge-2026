@@ -1,20 +1,22 @@
 import re
 import unicodedata
+from unidecode import unidecode
 
-# Legal suffixes to normalize or strip for root name matching
+# Comprehensive legal suffixes: US, India, and France
 LEGAL_SUFFIXES = {
     # English / US / India
     "inc", "incorporated", "corp", "corporation", "llc", "l.l.c.", "llp", "l.l.p.",
     "ltd", "limited", "pvt", "private", "pvt ltd", "private limited", "co", "company",
     "services", "enterprises", "solutions", "holdings", "group", "consulting",
-    "center", "trust", "industries", "associates",
+    "center", "trust", "industries", "associates", "sons", "brothers", "bros",
     # French
     "sarl", "s.a.r.l.", "sasu", "s.a.s.u.", "sas", "s.a.s.", "sa", "s.a.",
-    "eurl", "sci", "snc", "fils", "cie"
+    "eurl", "sci", "snc", "fils", "cie", "societe", "et fils", "france"
 }
 
-# Common address token abbreviations
+# Standard address token expansions (US, India, France)
 ADDR_ABBREVIATIONS = {
+    # US & India
     "st": "street", "saint": "street", "str": "street",
     "rd": "road", "ave": "avenue", "av": "avenue", "aven": "avenue",
     "dr": "drive", "blvd": "boulevard", "bd": "boulevard", "bvd": "boulevard",
@@ -23,42 +25,52 @@ ADDR_ABBREVIATIONS = {
     "no": "number", "nr": "near", "opp": "opposite",
     "pkwy": "parkway", "hwy": "highway", "fwy": "freeway",
     # French
-    "imp": "impasse", "all": "allee"
+    "r": "rue", "imp": "impasse", "all": "allee", "chem": "chemin",
+    "rte": "route", "crs": "cours", "qu": "quai"
 }
 
 def clean_text(text: str) -> str:
-    """Normalize unicode, strip accents/diacritics, lowercase, replace symbols."""
+    """Normalize unicode, transliterate non-Latin script, strip accents, lowercase, clean symbols."""
     if not text or text.lower() == "null":
         return ""
-    # NFKD decomposition to separate accents
+        
+    # 1. Transliterate Indic and non-Latin scripts to Latin phonetic equivalents
+    text = unidecode(text)
+    
+    # 2. NFKD decomposition to strip any remaining accents
     text = unicodedata.normalize("NFKD", text)
     text = "".join(c for c in text if not unicodedata.combining(c))
     text = text.lower()
-    # Replace common symbols
+    
+    # 3. Clean symbols
     text = text.replace("&", " and ")
     text = text.replace("@", " at ")
     text = text.replace("-", " ")
     text = text.replace("/", " ")
     text = text.replace(".", " ")
     text = text.replace(",", " ")
-    # Replace leetspeak numbers in predominantly alpha tokens (e.g. br0wn -> brown)
+    text = text.replace("'", " ")
+    
+    # 4. Replace leetspeak numbers inside words (e.g. br0wn -> brown)
     text = re.sub(r"(?<=[a-z])0(?=[a-z])", "o", text)
     text = re.sub(r"(?<=[a-z])1(?=[a-z])", "l", text)
-    # Strip non-alphanumeric except whitespace and unicode letters
+    
+    # 5. Clean whitespace and non-alphanumeric
     text = re.sub(r"[^\w\s]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
 
 def normalize_number(token: str) -> str:
-    """Normalize digit strings by stripping leading zeros (e.g. 06446 -> 6446)."""
+    """Strip leading zeros from digit strings (e.g. 06446 -> 6446)."""
     stripped = token.lstrip("0")
     return stripped if stripped else "0"
 
 def normalize_name(name: str) -> tuple:
     """Returns (cleaned_name, root_tokens, first_token, compact_name)."""
     cleaned = clean_text(name)
-    # Remove web domain endings like .com, .in, .org, .net, .co
-    cleaned_no_domain = re.sub(r"\b(com|org|net|co|in|edu|gov)\b", " ", cleaned)
+    
+    # Remove web domain endings (.com, .fr, .in, .org, .net, .co)
+    cleaned_no_domain = re.sub(r"(com|fr|in|org|net|co|edu|gov)", " ", cleaned)
     cleaned_no_domain = re.sub(r"\s+", " ", cleaned_no_domain).strip()
     
     tokens = [t for t in cleaned_no_domain.split() if t]
@@ -71,7 +83,7 @@ def normalize_name(name: str) -> tuple:
     return cleaned, " ".join(root_tokens), first_token, compact
 
 def normalize_address(address: str) -> tuple:
-    """Returns (cleaned_address, token_list, numbers_set, distinctive_words)."""
+    """Returns (cleaned_address, token_set, numbers_set, distinctive_words)."""
     cleaned = clean_text(address)
     tokens = []
     numbers = set()
@@ -82,7 +94,7 @@ def normalize_address(address: str) -> tuple:
         "floor", "suite", "apartment", "department", "number", "near", "opposite",
         "parkway", "highway", "freeway", "north", "south", "east", "west", "null",
         "and", "the", "for", "with", "city", "state", "delhi", "mumbai", "india",
-        "usa", "france", "rue", "boulevard", "impasse", "allee"
+        "usa", "france", "rue", "boulevard", "impasse", "allee", "chemin", "route"
     }
     
     for raw_t in cleaned.split():

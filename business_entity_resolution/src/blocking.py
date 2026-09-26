@@ -103,3 +103,35 @@ class FastInvertedIndexBlocker:
                     candidate_scores[cand_id] += w
                     
         return [cand_id for cand_id, _ in candidate_scores.most_common(self.max_candidates)]
+    def get_candidates_with_scores(self, raw_name: str, raw_addr: str, country: str) -> list:
+        """Returns list of (cand_id, score) for a query entity."""
+        c_name, root_tokens, _, compact = preprocessor.normalize_name(raw_name)
+        c_addr, _, nums, dist_words = preprocessor.normalize_address(raw_addr)
+        
+        c_index = self.index.get(country)
+        if not c_index:
+            return []
+            
+        tokens = extract_blocking_tokens(c_name, root_tokens, c_addr, nums, dist_words, compact)
+        if not tokens:
+            return []
+            
+        candidate_scores = Counter()
+        for tok in tokens:
+            postings = c_index.get(tok)
+            if postings:
+                if tok.startswith("n2_"):
+                    w = 4
+                elif tok.startswith("n_"):
+                    w = 3
+                elif tok.startswith("cp_"):
+                    w = 3
+                elif tok.startswith("aw_"):
+                    w = 2
+                else: # num_
+                    w = 1
+                for cand_id in postings:
+                    candidate_scores[cand_id] += w
+                    
+        return candidate_scores.most_common(self.max_candidates)
+
