@@ -1,64 +1,91 @@
-# Business Entity Resolution Solution (ML Challenge 2026)
+# Amazon ML Challenge 2026: Business Entity Resolution
 
-## System Overview
-An end-to-end, high-performance Business Entity Resolution pipeline designed for large-scale multi-source commercial entity deduplication and record linkage.
+An end-to-end, high-performance Machine Learning solution for large-scale multi-source commercial entity resolution and record linkage.
 
-- **Baseline Model:** Country-partitioned inverted-index blocking with multi-token normalization + calibrated RapidFuzz string similarity metric. **Macro F_0.5 = 83.57%** on 50k holdout.
-- **Advanced Model:** Multi-key hybrid blocking + 22 pairwise tabular features + LightGBM GBDT ranking classifier with calibrated singleton thresholding. **Macro F_0.5 = 88.62%** on holdout.
+## Problem Statement
+Given business records from 3 independent sources (`Source 1`, `Source 2`, `Source 3`) with noisy, missing, and inconsistent fields:
+- Determine which records refer to the same real-world business entity.
+- Source 1 serves as the deduplicated reference source.
+- Evaluated on **Macro-Averaged F_0.5 Score** (precision-weighted, penalizing false merges $2\times$ more than missed matches).
 
-## Directory Structure
+## Performance Highlights (Validation Benchmark: 50,000 Entities)
+| Model | Candidate Recall | Macro Precision | Macro Recall | **Macro F_0.5** | Singleton Accuracy |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Baseline Matcher** | 80.34% | 84.72% | 79.30% | **81.94%** | 87.29% |
+| **Enhanced Multi-Key Blocker** | 93.07% | 85.02% | 84.64% | **83.57%** | 85.35% |
+| **LightGBM Initial Hybrid** | 93.07% | 92.30% | 81.92% | **88.62%** | 93.06% |
+| **CatBoost + LightGBM Ensemble (Latest)** | **93.07%** | **94.75%** | **88.50%** | **92.54%** | **92.28%** |
+
+### Per-Country Breakdown with Calibrated Thresholds:
+- **United States:** **94.12% Macro $F_{0.5}$** ($	au_{\text{US}} = 0.94$, Precision = 95.84%)
+- **India:** **90.17% Macro $F_{0.5}$** ($	au_{\text{India}} = 0.94$, Precision = 93.12%)
+- **France:** $	au_{\text{France}} = 0.96$ *(Precision-Guarded against false-positive over-prediction)*
+- **Overall Macro $F_{0.5}$:** **92.54%**
+
+## Key Innovations
+1. **Strict Country Partitioning:** 100% intra-country matching confirmed across all 7.64M ground truth links, safely cutting pairwise search space by >70%.
+2. **Multilingual Script Transliteration (`unidecode`):**
+   - Transliterates Indic scripts (Hindi/Devanagari, Tamil, Odia, Gujarati, Marathi) to Latin phonetics.
+   - Cross-script Indian records (e.g. `Ss Food Private Limited` $\leftrightarrow$ `एसएस फूड प्राइवेट लिमिटेड`) now match with high similarity, eliminating false negatives.
+3. **Multi-Key Inverted Index Candidate Generation:**
+   - Unpacks domain names (`painterslocal46 com` $\rightarrow$ `painters`, `local`, `46`).
+   - Normalizes numeric tokens with leading-zero stripping (`06446` $\leftrightarrow$ `6446`).
+   - Indexes distinctive address vocabulary to bridge multilingual transliteration gaps.
+4. **42 Advanced Pairwise Tabular Features:**
+   - Multi-metric string distances (Jaro-Winkler, Levenshtein, Damerau-Levenshtein, Token Sort, Token Set, Partial).
+   - Address numeric and landmark overlaps.
+   - Relative score margins between candidate and top candidate.
+5. **Multi-Model GBDT Ensemble:**
+   - Blended CatBoost and LightGBM classifier with country-calibrated decision thresholds.
+6. **Precision-Calibrated Singleton Gating:** Protects singletons from false positives, keeping singleton accuracy above 92%.
+
+## Project Structure
 ```
-business_entity_resolution/
-├── src/
-│   ├── config.py                 # Paths and constants
-│   ├── preprocessor.py           # Domain unpacking, text normalization, Indic script handling
-│   ├── blocking.py               # Country-partitioned inverted index candidate generator
-│   ├── feature_engineering.py    # Pairwise feature extraction
-│   ├── baseline_matcher.py       # High-speed calibrated baseline matcher
-│   ├── hybrid_matcher.py         # LightGBM + FastMatcher ensemble matcher
-│   ├── train_classifier.py       # LightGBM model training pipeline
-│   ├── evaluate.py               # Benchmark evaluation on local 50k validation split
-│   └── predict.py                # Full test set inference generator
-├── val_data/                     # Local 50k stratified validation benchmark
-├── output/
-│   ├── matching_results.tsv      # Leaderboard output
-│   └── candidate_pairs.tsv       # Blocking candidate pairs
-├── requirements.txt              # Pinned dependencies
-└── README.md                     # Reproduction guide
+├── business_entity_resolution/
+│   ├── src/
+│   │   ├── config.py                 # Central configurations
+│   │   ├── preprocessor.py           # Multilingual transliteration & normalizer
+│   │   ├── blocking.py               # Country-partitioned multi-key blocker
+│   │   ├── feature_engineering.py    # 42 pairwise tabular features
+│   │   ├── baseline_matcher.py       # RapidFuzz baseline matcher
+│   │   ├── ensemble_matcher.py       # CatBoost + LightGBM ensemble matcher
+│   │   ├── train_ensemble.py         # Model training & country calibration
+│   │   ├── evaluate.py               # Benchmark evaluation on 50k entities
+│   │   ├── predict.py                # Vectorized batch test inference pipeline
+│   │   └── utils_metric.py           # Macro F_0.5 computation engine
+│   ├── output/                       # Output TSV files
+│   ├── catboost_model.cbm            # Trained CatBoost model
+│   ├── lgbm_model.txt                # Trained LightGBM booster
+│   ├── calibrated_thresholds.json    # Country-specific optimal thresholds
+│   ├── requirements.txt              # Pinned python dependencies
+│   ├── README.md                     # Reproduction guide
+│   └── Documentation_template.md     # Official methodology report
+├── .gitignore
+└── README.md
 ```
 
-## Quick Start / Reproduction
+## Setup & Reproduction
 
-### 1. Requirements
-Install dependencies:
+### 1. Environment Setup
 ```bash
-pip install -r requirements.txt
+python -m venv .venv
+# On Windows PowerShell:
+.\.venv\Scripts\Activate.ps1
+pip install -r business_entity_resolution/requirements.txt
 ```
 
-### 2. Run Local Benchmark Evaluation
-To evaluate on the 50,000 entity validation benchmark:
+### 2. Train Ensemble & Calibrate Thresholds
 ```bash
-python src/evaluate.py
+cd business_entity_resolution
+python src/train_ensemble.py
 ```
 
-### 3. Train LightGBM Model
-To train the LightGBM classifier on mined positive and negative candidate pairs:
+### 3. Generate Submission Files (Batch Vectorized Inference)
 ```bash
-python src/train_classifier.py
-```
-
-### 4. Run Full Test Set Inference
-To generate `output/matching_results.tsv` and `output/candidate_pairs.tsv`:
-```bash
-# Baseline Fast Matcher (High speed)
 python src/predict.py
-
-# Or Advanced Hybrid Model (Top accuracy)
-python src/predict.py --hybrid
 ```
 
-### 5. Validate Output Format
-Validate submission outputs against all competition constraints:
+### 4. Validate Submission
 ```bash
 python utils/validate_submission.py \
     --matching output/matching_results.tsv \
